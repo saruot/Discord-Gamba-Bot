@@ -1,35 +1,66 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ActionRowBuilder, ButtonBuilder } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { db } from '../firebaseconfig.js';
 
-export const data = new SlashCommandBuilder() 
+export const data = new SlashCommandBuilder()
     .setName('challenge')
     .setDescription('Otetaan rehtii')
-    .addUserOption(option => option.setName('target').setDescription('The user to challenge').setRequired(true));
-   export const execute = async (interaction) => {
+    .addUserOption(option => 
+        option.setName('target')
+        .setDescription('The user to challenge')
+        .setRequired(true)
+    )
+    .addIntegerOption(option =>
+        option.setName('määrä')
+        .setDescription('Anna vedon määrä')
+        .setRequired(true)
+    );
+
+export const execute = async (interaction) => {
     const challengerId = interaction.user.id;
     const targetUser = interaction.options.getUser('target');
+    const wager = interaction.options.getInteger('määrä'); // Get the wager amount
 
-    // Check if both players are opted-in
-    if (!activePlayers.has(challengerId) || !activePlayers.has(targetUser.id)) {
-        return interaction.reply({ content: 'Both players must be opted-in to the game!', ephemeral: true });
+    if (wager <= 0) {
+        return interaction.reply({ content: 'The wager must be greater than 0!', ephemeral: true });
     }
 
-    // Create a button for the challenged player to accept or decline the duel
+    // Fetch player data
+    const challengerRef = doc(db, 'users', challengerId);
+    const targetRef = doc(db, 'users', targetUser.id);
+
+    const challengerDoc = await getDoc(challengerRef);
+    const targetDoc = await getDoc(targetRef);
+
+    if (!challengerDoc.exists() || !targetDoc.exists()) {
+        return interaction.reply({ content: 'Both players must be registered in the game!', ephemeral: true });
+    }
+
+    const challengerData = challengerDoc.data();
+    const targetData = targetDoc.data();
+
+    // Ensure both players have enough coins
+    if (challengerData.coins < wager || targetData.coins < wager) {
+        return interaction.reply({ content: 'Both players must have enough coins for the wager!', ephemeral: true });
+    }
+
+    // Create accept/decline buttons
     const acceptButton = new ButtonBuilder()
         .setCustomId('accept_duel')
         .setLabel('Accept Duel')
-        .setStyle('SUCCESS');
+        .setStyle(ButtonStyle.Success);
 
     const declineButton = new ButtonBuilder()
         .setCustomId('decline_duel')
         .setLabel('Decline Duel')
-        .setStyle('DANGER');
+        .setStyle(ButtonStyle.Danger);
 
     const row = new ActionRowBuilder()
         .addComponents(acceptButton, declineButton);
 
     await interaction.reply({
-        content: `${targetUser.username}, you have been challenged by ${interaction.user.username} for a coinflip duel! Do you accept?`,
+        content: `${targetUser.username}, you have been challenged by ${interaction.user.username} for a coinflip duel of **${wager} coins**! Do you accept?`,
         components: [row],
     });
 
@@ -42,31 +73,27 @@ export const data = new SlashCommandBuilder()
             // Coinflip logic
             const winner = Math.random() < 0.5 ? challengerId : targetUser.id;
             const result = Math.random() < 0.5 ? 'heads' : 'tails';
-            const wager = 10; // Fixed wager
 
-            const challengerRef = db.collection('users').doc(challengerId);
-            const targetRef = db.collection('users').doc(targetUser.id);
-
-            const challengerData = (await challengerRef.get()).data();
-            const targetData = (await targetRef.get()).data();
+            let challengerNewCoins = challengerData.coins;
+            let targetNewCoins = targetData.coins;
 
             if (winner === challengerId) {
-                await challengerRef.update({ coins: challengerData.coins + wager });
-                await targetRef.update({ coins: targetData.coins - wager });
-                await i.followUp(`${interaction.user.username} wins the duel! The coin was ${result}.`);
+                challengerNewCoins += wager;
+                targetNewCoins -= wager;
+                await i.reply(`${interaction.user.username} wins the duel! The coin was **${result}**.`);
             } else {
-                await targetRef.update({ coins: targetData.coins + wager });
-                await challengerRef.update({ coins: challengerData.coins - wager });
-                await i.followUp(`${targetUser.username} wins the duel! The coin was ${result}.`);
+                challengerNewCoins -= wager;
+                targetNewCoins += wager;
+                await i.reply(`${targetUser.username} wins the duel! The coin was **${result}**.`);
             }
 
-            // End the duel
-            activePlayers.delete(challengerId);
-            activePlayers.delete(targetUser.id);
+            // Update Firestore
+            await setDoc(challengerRef, { ...challengerData, coins: challengerNewCoins }, { merge: true });
+            await setDoc(targetRef, { ...targetData, coins: targetNewCoins }, { merge: true });
 
         } else {
             // Decline the duel
             await i.reply({ content: `${targetUser.username} declined the duel.`, ephemeral: true });
         }
     });
-}
+};

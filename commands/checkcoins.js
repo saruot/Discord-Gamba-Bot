@@ -1,6 +1,6 @@
-import { db } from '../firebaseconfig.js';
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { doc, getDoc,  } from 'firebase/firestore';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../firebaseconfig.js';
 
 export const data = new SlashCommandBuilder() 
 .setName('check-coins')
