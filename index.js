@@ -3,10 +3,12 @@ import path from 'path';
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import config from './config.json' assert { type: 'json' };
 import admin from 'firebase-admin';
+import 'dotenv/config';
+import { firebaseConfig } from './firebaseconfig.js';
 
 const { token, clientId, guildId } = config;
 
-admin.initializeApp();
+admin.initializeApp(firebaseConfig);
 const db = admin.firestore();
 
 const client = new Client({
@@ -17,6 +19,7 @@ const client = new Client({
     ]
 });
 
+const activePlayers = new Set();
 
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const userId = newState.member.id;
@@ -49,9 +52,10 @@ client.commands = new Collection();
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
 
 for (const file of commandFiles) {
-    const command = require(`./commands/${file}`);
-    client.commands.set(command.data.name, command); // Store commands in the collection
+    const command = await import(`./commands/${file}`);
+    client.commands.set(command.data.name, command);
 }
+
 
 // Handle interactions
 client.on('interactionCreate', async (interaction) => {
@@ -61,7 +65,7 @@ client.on('interactionCreate', async (interaction) => {
     if (!command) return;
 
     try {
-        await command.execute(interaction, player);
+        await command.execute(interaction);
     } catch (error) {
         console.error(error);
         await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
