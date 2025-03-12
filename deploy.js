@@ -42,9 +42,7 @@ const rest = new REST({ version: '10' }).setToken(TOKEN);
         await loadCommands();
 
         await rest.put(
-            GUILD_ID
-                ? Routes.applicationGuildCommands(CLIENT_ID, GUILD_ID) // Register in a test server
-                : Routes.applicationCommands(CLIENT_ID), // Register globally
+            Routes.applicationCommands(CLIENT_ID), // Register globally
             { body: commands }
         );
 

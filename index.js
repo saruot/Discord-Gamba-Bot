@@ -2,14 +2,10 @@ import fs from 'fs';
 import path from 'path';
 import { Client, Collection, GatewayIntentBits } from 'discord.js';
 import config from './config.json' assert { type: 'json' };
-import admin from 'firebase-admin';
-import 'dotenv/config';
-import { firebaseConfig } from './firebaseconfig.js';
+import { db } from './firebaseconfig.js';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
-const { token, clientId, guildId } = config;
-
-admin.initializeApp(firebaseConfig);
-const db = admin.firestore();
+const { token } = config;
 
 const client = new Client({
     intents: [
@@ -19,43 +15,50 @@ const client = new Client({
     ]
 });
 
-const activePlayers = new Set();
-
 client.on('voiceStateUpdate', async (oldState, newState) => {
     const userId = newState.member.id;
-    const userRef = db.collection('users').doc(userId);
+    const userRef = doc(db, 'users', userId);
 
-    // When a user joins a voice channel
-    if (!oldState.channelId && newState.channelId) {
-        const userDoc = await userRef.get();
-        const data = userDoc.exists ? userDoc.data() : { coins: 0, activeTime: 0 };
+    try {
+        const userDoc = await getDoc(userRef);
+        const data = userDoc.exists() ? userDoc.data() : null;
 
-        // Store the start of voice activity
-        await userRef.set({ ...data, lastJoin: Date.now() }, { merge: true });
-
-    // When a user leaves a voice channel
-    } else if (oldState.channelId && !newState.channelId) {
-        const userDoc = await userRef.get();
-        const data = userDoc.exists ? userDoc.data() : { coins: 0, activeTime: 0 };
+        // User joins a voice channel
+        if (!oldState.channelId && newState.channelId && data) {
+            await setDoc(userRef, { ...data, lastJoin: Date.now() }, { merge: true });
         
-        // Calculate the time spent in the voice channel and update the activeTime
-        const timeSpent = Date.now() - data.lastJoin;
-        const updatedActiveTime = (data.activeTime || 0) + timeSpent;
+        // User leaves a voice channel
+        } else if (oldState.channelId && !newState.channelId && data) {
+            if (!data.lastJoin) return; // Prevent error if lastJoin doesn't exist
+            
+            const timeSpent = (Date.now() - data.lastJoin) / 60000; // Convert to minutes
+            const coinsEarned = Math.floor(timeSpent * 10); // 10 coins per minute
 
-        await userRef.set({ ...data, activeTime: updatedActiveTime }, { merge: true });
+            const updatedCoins = (data.coins || 0) + coinsEarned;
+            const updatedActiveTime = (data.activeTime || 0) + Math.floor(timeSpent * 60); // Store in seconds
+
+            await setDoc(userRef, { 
+                ...data, 
+                coins: updatedCoins, 
+                activeTime: updatedActiveTime, 
+                lastJoin: null 
+            }, { merge: true });
+
+            console.log(`User ${userId} earned ${coinsEarned} coins for ${Math.floor(timeSpent)} minutes in voice chat.`);
+        }
+    } catch (error) {
+        console.error("Error updating voice activity:", error);
     }
 });
 
-
 client.commands = new Collection();
 
+// Load command files
 const commandFiles = fs.readdirSync('./commands').filter(file => file.endsWith('.js'));
-
 for (const file of commandFiles) {
     const command = await import(`./commands/${file}`);
     client.commands.set(command.data.name, command);
 }
-
 
 // Handle interactions
 client.on('interactionCreate', async (interaction) => {

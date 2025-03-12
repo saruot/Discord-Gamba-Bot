@@ -1,4 +1,6 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { db } from '../firebaseconfig.js';
 
 
 export const data = new SlashCommandBuilder()   
@@ -6,7 +8,7 @@ export const data = new SlashCommandBuilder()
     .setDescription('Flip a coin against the house!')
     .addIntegerOption(option => option.setName('wager').setDescription('Amount of coins to wager').setRequired(true));
 
-    export const  execute = async (interaction) => {
+    export const execute = async (interaction) => {
         const userId = interaction.user.id;
         const wager = interaction.options.getInteger('wager');
 
@@ -14,8 +16,8 @@ export const data = new SlashCommandBuilder()
             return interaction.reply({ content: 'You must wager a positive amount of coins!', ephemeral: true });
         }
 
-        const userRef = db.collection('users').doc(userId);
-        const userDoc = await userRef.get();
+        const userRef = doc(db, 'users', userId);
+        const userDoc = await getDoc(userRef);
 
         if (!userDoc.exists) {
             return interaction.reply({ content: 'You need to opt-in to the game first!', ephemeral: true });
@@ -34,7 +36,7 @@ export const data = new SlashCommandBuilder()
         const updatedCoins = playerWins ? userData.coins + wager : userData.coins - wager;
 
         // Update the player's coins
-        await userRef.update({ coins: updatedCoins });
+        await setDoc(userRef, {...data, coins: updatedCoins });
 
         const outcomeMessage = playerWins
             ? `🎉 You win the coinflip! You gain ${wager} coins from the house! The coin was ${result}.`
