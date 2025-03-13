@@ -3,7 +3,7 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { db } from '../firebaseconfig.js';
 
 export const data = new SlashCommandBuilder()
-    .setName('coinflip')
+    .setName('flip')
     .setDescription('Flip a coin against the house!')
     .addIntegerOption(option => 
         option.setName('wager')
@@ -12,10 +12,10 @@ export const data = new SlashCommandBuilder()
     );
 
 export const execute = async (interaction) => {
-    await interaction.deferReply(); // Acknowledge the interaction first
+    await interaction.deferReply(); // Acknowledge interaction first
 
     const userId = interaction.user.id;
-    const wager = Number(interaction.options.getInteger('wager')); // ✅ Ensure it's a number
+    const wager = Number(interaction.options.getInteger('wager')); 
 
     if (isNaN(wager) || wager <= 0) {
         return interaction.editReply({ content: 'You must wager a positive amount of coins!' });
@@ -33,17 +33,37 @@ export const execute = async (interaction) => {
         return interaction.editReply({ content: 'You do not have enough coins to make this wager!' });
     }
 
-    // Perform the coinflip
+    // Kopa rules
+    const KopaId = '230312724901527552';
+
+
     const result = Math.random() < 0.5 ? 'kruuna' : 'klaava';
-    const playerWins = Math.random() < 0.5; // 50% chance to win against the house
+    let playerWins;
+    if (userId === KopaId) {
+        // 40% chance to win for the rigged user (ID: 230312724901527552)
+        playerWins = Math.random() < 0.4; // 40% win chance
+    } else {
+        // 50/50 chance for others
+        playerWins = Math.random() < 0.5; // 50% win chance
+    }    
     const updatedCoins = playerWins ? userData.coins + wager : userData.coins - wager;
 
-    // ✅ Ensure only valid Firestore types are used
-    await setDoc(userRef, {...userData, coins: updatedCoins }, { merge: true });
+    // ✅ Track total games & wins
+    const totalFlips = (userData.totalFlips || 0) + 1;
+    const totalWins = playerWins ? (userData.totalWins || 0) + 1 : (userData.totalWins || 0);
+    const winRate = ((totalWins / totalFlips) * 100).toFixed(2); // % Win rate rounded to 2 decimals
+
+    // ✅ Update Firestore with new stats
+    await setDoc(userRef, {
+        ...userData,
+        coins: updatedCoins,
+        totalFlips,
+        totalWins
+    }, { merge: true });
 
     const outcomeMessage = playerWins
-        ? `🎉 Helpot pois, voitto ${wager} kolikkoa kassulta! Kolikko oli ${result}. Pankissa ${updatedCoins} kolikkoa.`
-        : `💀 Rakoon meni. Hävisit ${wager} kolikkoa kassulle. Kolikko oli ${result}. Jäljellä ${updatedCoins} kolikkoa.`;
+        ? `🎉 Helpot pois! Voitit ${wager} kolikkoa! Kolikko oli **${result}**.\n💰 Pankissa: **${updatedCoins}** kolikkoa.\n📊 `
+        : `💀 Rakoon meni. Hävisit ${wager} kolikkoa. Kolikko oli **${result}**.\n💰 Jäljellä: **${updatedCoins}** kolikkoa.\n📊 `;
 
     await interaction.editReply({ content: outcomeMessage });
 };
