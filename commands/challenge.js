@@ -1,8 +1,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import { ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from '../firebaseconfig.js';
-
 export const data = new SlashCommandBuilder()
     .setName('challenge')
     .setDescription('Otetaan rehtii')
@@ -20,10 +19,11 @@ export const data = new SlashCommandBuilder()
 export const execute = async (interaction) => {
     const challengerId = interaction.user.id;
     const targetUser = interaction.options.getUser('target');
-    const wager = interaction.options.getInteger('määrä'); // Get the wager amount
+    const wager = Number(interaction.options.getInteger('määrä')); // Get the wager amount
 
     if (wager <= 0) {
-        return interaction.reply({ content: 'The wager must be greater than 0!', ephemeral: true });
+        return interaction.reply({ content: 'The wager must be greater than 0!',    
+                                    flags: MessageFlags.Ephemeral});
     }
 
     // Fetch player data
@@ -34,7 +34,8 @@ export const execute = async (interaction) => {
     const targetDoc = await getDoc(targetRef);
 
     if (!challengerDoc.exists() || !targetDoc.exists()) {
-        return interaction.reply({ content: 'Both players must be registered in the game!', ephemeral: true });
+        return interaction.reply({ content: 'Both players must be registered in the game!',         
+                                    flags: MessageFlags.Ephemeral        });
     }
 
     const challengerData = challengerDoc.data();
@@ -42,7 +43,8 @@ export const execute = async (interaction) => {
 
     // Ensure both players have enough coins
     if (challengerData.coins < wager || targetData.coins < wager) {
-        return interaction.reply({ content: 'Both players must have enough coins for the wager!', ephemeral: true });
+        return interaction.reply({ content: 'Both players must have enough coins for the wager!', 
+                                    flags: MessageFlags.Ephemeral});
     }
 
     // Create accept/decline buttons
@@ -59,8 +61,9 @@ export const execute = async (interaction) => {
     const row = new ActionRowBuilder()
         .addComponents(acceptButton, declineButton);
 
-    await interaction.reply({
-        content: `${targetUser.username}, you have been challenged by ${interaction.user.username} for a coinflip duel of **${wager} coins**! Do you accept?`,
+    // Send challenge message (only visible to the target)
+    const message = await interaction.reply({
+        content: `@${targetUser.username}, you have been challenged by ${interaction.user.username} for a coinflip duel of **${wager} coins**! Do you accept?`,
         components: [row],
     });
 
@@ -74,26 +77,30 @@ export const execute = async (interaction) => {
             const winner = Math.random() < 0.5 ? challengerId : targetUser.id;
             const result = Math.random() < 0.5 ? 'heads' : 'tails';
 
-            let challengerNewCoins = challengerData.coins;
-            let targetNewCoins = targetData.coins;
+            let challengerNewCoins = Number(challengerData.coins);
+            let targetNewCoins = Number(targetData.coins);
 
+            let resultMessage;
             if (winner === challengerId) {
                 challengerNewCoins += wager;
                 targetNewCoins -= wager;
-                await i.reply(`${interaction.user.username} wins the duel! The coin was **${result}**.`);
+                resultMessage = `${interaction.user.username} Voittaa. Kolikko oli **${result}**. Vedon määrä ${wager}.`;
             } else {
                 challengerNewCoins -= wager;
                 targetNewCoins += wager;
-                await i.reply(`${targetUser.username} wins the duel! The coin was **${result}**.`);
+                resultMessage = `${targetUser.username} Voittaa. Kolikko oli **${result}**. Vedon määrä ${wager}.`;
             }
 
             // Update Firestore
             await setDoc(challengerRef, { ...challengerData, coins: challengerNewCoins }, { merge: true });
             await setDoc(targetRef, { ...targetData, coins: targetNewCoins }, { merge: true });
 
+            // ✅ Remove buttons & update message
+            await i.update({ content: resultMessage, components: [] });
+
         } else {
             // Decline the duel
-            await i.reply({ content: `${targetUser.username} declined the duel.`, ephemeral: true });
+            await i.update({ content: `${targetUser.username} Ei halunnu savuu.`, components: [] }); // ✅ Remove buttons
         }
     });
 };
