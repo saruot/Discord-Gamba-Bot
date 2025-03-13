@@ -23,7 +23,7 @@ export const execute = async (interaction) => {
     const wager = Number(interaction.options.getInteger('määrä'));
 
     if (wager <= 0) {
-        return interaction.reply({ content: 'The wager must be greater than 0!', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: 'Vedon pitää olla enemmän kuin 0!', flags: MessageFlags.Ephemeral });
     }
 
     // Fetch player data
@@ -34,14 +34,14 @@ export const execute = async (interaction) => {
     const targetDoc = await getDoc(targetRef);
 
     if (!challengerDoc.exists() || !targetDoc.exists()) {
-        return interaction.reply({ content: 'Both players must be registered in the game!', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: 'Molempien pelaajien pitää olla rekistöryneitä peliin!', flags: MessageFlags.Ephemeral });
     }
 
     const challengerData = challengerDoc.data();
     const targetData = targetDoc.data();
 
     if (challengerData.coins < wager || targetData.coins < wager) {
-        return interaction.reply({ content: 'Both players must have enough coins for the wager!', flags: MessageFlags.Ephemeral });
+        return interaction.reply({ content: 'Molemmilla pelaajilla pitää olla tarpeeksi rahaa vetoon!', flags: MessageFlags.Ephemeral });
     }
 
     // Create accept/decline buttons
@@ -57,14 +57,15 @@ export const execute = async (interaction) => {
 
     const row = new ActionRowBuilder().addComponents(acceptButton, declineButton);
 
+    // Acknowledge the interaction
     const message = await interaction.reply({
-        content: `@<${targetUser.username}>, you have been challenged by ${interaction.user.username} for a coinflip duel of **${wager} coins**! Do you accept?`,
+        content: `@<${targetUser.id}>, you have been challenged by ${interaction.user.username} for a coinflip duel of **${wager} coins**! Do you accept?`,
         components: [row],
     });
 
     // Handle interaction
     const filter = (i) => i.user.id === targetUser.id && (i.customId === 'accept_duel' || i.customId === 'decline_duel');
-    const collector = interaction.channel.createMessageComponentCollector({ filter, time: 15000 });
+    const collector = interaction.channel.createMessageComponentCollector({ filter, time: 120000 }); // 2-minute timeout
 
     collector.on('collect', async (i) => {
         if (i.customId === 'accept_duel') {
@@ -81,7 +82,7 @@ export const execute = async (interaction) => {
                 // Normal 50/50 chance for both players
                 winner = Math.random() < 0.5 ? challengerId : targetUser.id;
             }           
-             const result = Math.random() < 0.5 ? 'heads' : 'tails';
+            const result = Math.random() < 0.5 ? 'kruuna' : 'klaava';
 
             let challengerNewCoins = challengerData.coins;
             let targetNewCoins = targetData.coins;
@@ -97,13 +98,13 @@ export const execute = async (interaction) => {
                 targetNewCoins -= wager;
                 challengerWins += 1;
                 targetLosses += 1;
-                resultMessage = `🏆 **${interaction.user.username} wins!** The coin was **${result}**. Wager: **${wager}** coins.`;
+                resultMessage = `🏆 **${interaction.user.username} voittaa!** Kolikko oli **${result}**. Vedon määrä: **${wager}** kolikkoa.`;
             } else {
                 challengerNewCoins -= wager;
                 targetNewCoins += wager;
                 targetWins += 1;
                 challengerLosses += 1;
-                resultMessage = `🏆 **${targetUser.username} wins!** The coin was **${result}**. Wager: **${wager}** coins.`;
+                resultMessage = `🏆 **${targetUser.username} voittaa!** Kolikko oli **${result}**. Vedon määrä: **${wager}** kolikkoa.`;
             }
 
             // Update Firestore with new stats
@@ -125,7 +126,17 @@ export const execute = async (interaction) => {
             await i.update({ content: resultMessage, components: [] });
 
         } else {
-            await i.update({ content: `${targetUser.username} declined the challenge.`, components: [] });
+            await i.update({ content: `${targetUser.username} ei halunnut savua.`, components: [] });
+        }
+    });
+
+    collector.on('end', async (collected, reason) => {
+        // If the challenge timed out
+        if (reason === 'time') {
+            await message.edit({
+                content: `@${targetUser.id}, Kesti liian kauan ottaa rehtiä ${interaction.user.username} vastaan. Haaste erääntyi.`,
+                components: []
+            });
         }
     });
 };

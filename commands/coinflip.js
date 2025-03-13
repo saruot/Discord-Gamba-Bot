@@ -18,19 +18,19 @@ export const execute = async (interaction) => {
     const wager = Number(interaction.options.getInteger('wager')); 
 
     if (isNaN(wager) || wager <= 0) {
-        return interaction.editReply({ content: 'You must wager a positive amount of coins!' });
+        return interaction.editReply({ content: 'Vedon pitää olla positiivinen luku!' });
     }
 
     const userRef = doc(db, 'users', userId);
     const userDoc = await getDoc(userRef);
 
     if (!userDoc.exists()) {
-        return interaction.editReply({ content: 'You need to opt-in to the game first!' });
+        return interaction.editReply({ content: 'Sinun pitää rekisteröityä peliin ensin!' });
     }
 
     const userData = userDoc.data();
     if (userData.coins < wager) {
-        return interaction.editReply({ content: 'You do not have enough coins to make this wager!' });
+        return interaction.editReply({ content: 'Fyrkka ei riitä.' });
     }
 
     // Kopa rules
