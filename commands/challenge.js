@@ -59,15 +59,17 @@ export const execute = async (interaction) => {
 
     // Acknowledge the interaction
     const message = await interaction.reply({
-        content: `@<${targetUser.id}>, you have been challenged by ${interaction.user.username} for a coinflip duel of **${wager} coins**! Do you accept?`,
+        content: `${targetUser}, you have been challenged by ${interaction.user} for a coinflip duel of **${wager} coins**! Do you accept?`,
         components: [row],
     });
+    let timeoutTriggered = false;  // Flag to check if timeout occurred
 
     // Handle interaction
     const filter = (i) => i.user.id === targetUser.id && (i.customId === 'accept_duel' || i.customId === 'decline_duel');
     const collector = interaction.channel.createMessageComponentCollector({ filter, time: 120000 }); // 2-minute timeout
 
     collector.on('collect', async (i) => {
+        timeoutTriggered = true
         if (i.customId === 'accept_duel') {
             // Coinflip logic
             const KopaId = '230312724901527552';
@@ -126,15 +128,16 @@ export const execute = async (interaction) => {
             await i.update({ content: resultMessage, components: [] });
 
         } else {
+            timeoutTriggered = true
             await i.update({ content: `${targetUser.username} ei halunnut savua.`, components: [] });
         }
     });
 
     collector.on('end', async (collected, reason) => {
-        // If the challenge timed out
-        if (reason === 'time') {
+        // If the challenge timed out and no action was taken
+        if (reason === 'time' && !timeoutTriggered) {
             await message.edit({
-                content: `@${targetUser.id}, Kesti liian kauan ottaa rehtiä ${interaction.user.username} vastaan. Haaste erääntyi.`,
+                content: `@${targetUser.username}, Kesti liian kauan ottaa rehtiä ${interaction.user.username} vastaan. Haaste erääntyi.`,
                 components: []
             });
         }
