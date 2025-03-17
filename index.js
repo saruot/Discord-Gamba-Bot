@@ -113,6 +113,13 @@ const scanVoiceChannels = async () => {
         for (const [channelId, channel] of voiceChannels) {
             for (const [userId, member] of channel.members) {
                 if (!member.user.bot) { // Ignore bots
+                    const userRef = doc(db, 'users', userId);
+                    const AuserDoc = await getDoc(userRef);
+                    
+                    if (!AuserDoc.exists()) {
+                        console.log(`❌ Skipping ${userId} (not in users collection).`);
+                        continue; // Skip if the user is not found in the "users" collection
+                    }
                     const activeUserRef = doc(db, 'activeUsers', userId);
                     const userDoc = await getDoc(activeUserRef);
 
