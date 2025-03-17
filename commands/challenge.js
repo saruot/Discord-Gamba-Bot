@@ -3,6 +3,8 @@ import { ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'disc
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import { db } from '../firebaseconfig.js';
 
+const activeChallenges = new Set(); // Store active challenge participants
+
 export const data = new SlashCommandBuilder()
     .setName('haasto')
     .setDescription('Otetaan rehtii')
@@ -26,6 +28,17 @@ export const execute = async (interaction) => {
         return interaction.reply({ content: 'Vedon pitää olla enemmän kuin 0!', flags: MessageFlags.Ephemeral });
     }
 
+    if (challengerId === targetUser.id) {
+        return interaction.reply({ content: 'Et voi haastaa itseäsi!', flags: MessageFlags.Ephemeral });
+    }
+
+    if (activeChallenges.has(challengerId) || activeChallenges.has(targetUser.id)) {
+        return interaction.reply({ content: 'Sinulla tai haastamallasi käyttäjällä on jo käynnissä oleva haaste!', flags: MessageFlags.Ephemeral });
+    }
+
+    activeChallenges.add(challengerId);
+    activeChallenges.add(targetUser.id);
+
     // Fetch player data
     const challengerRef = doc(db, 'users', challengerId);
     const targetRef = doc(db, 'users', targetUser.id);
@@ -34,6 +47,8 @@ export const execute = async (interaction) => {
     const targetDoc = await getDoc(targetRef);
 
     if (!challengerDoc.exists() || !targetDoc.exists()) {
+        activeChallenges.delete(challengerId);
+        activeChallenges.delete(targetUser.id);
         return interaction.reply({ content: 'Molempien pelaajien pitää olla rekistöryneitä peliin!', flags: MessageFlags.Ephemeral });
     }
 
@@ -41,17 +56,19 @@ export const execute = async (interaction) => {
     const targetData = targetDoc.data();
 
     if (challengerData.coins < wager || targetData.coins < wager) {
+        activeChallenges.delete(challengerId);
+        activeChallenges.delete(targetUser.id);
         return interaction.reply({ content: 'Molemmilla pelaajilla pitää olla tarpeeksi rahaa vetoon!', flags: MessageFlags.Ephemeral });
     }
 
     // Create accept/decline buttons
     const acceptButton = new ButtonBuilder()
-        .setCustomId('accept_duel')
+        .setCustomId(`accept_duel_${challengerId}`)
         .setLabel('Accept Duel')
         .setStyle(ButtonStyle.Success);
 
     const declineButton = new ButtonBuilder()
-        .setCustomId('decline_duel')
+        .setCustomId(`decline_duel_${challengerId}`)
         .setLabel('Decline Duel')
         .setStyle(ButtonStyle.Danger);
 
@@ -62,28 +79,31 @@ export const execute = async (interaction) => {
         content: `${targetUser}, you have been challenged by ${interaction.user} for a coinflip duel of **${wager} coins**! Do you accept?`,
         components: [row],
     });
-    let timeoutTriggered = false;  // Flag to check if timeout occurred
+
+    let timeoutTriggered = false; // Flag to check if timeout occurred
 
     // Handle interaction
-    const filter = (i) => i.user.id === targetUser.id && (i.customId === 'accept_duel' || i.customId === 'decline_duel');
+    const filter = (i) => 
+        i.user.id === targetUser.id && 
+        (i.customId === `accept_duel_${challengerId}` || i.customId === `decline_duel_${challengerId}`);
+
     const collector = interaction.channel.createMessageComponentCollector({ filter, time: 120000 }); // 2-minute timeout
 
     collector.on('collect', async (i) => {
-        timeoutTriggered = true
-        if (i.customId === 'accept_duel') {
+        timeoutTriggered = true;
+        await i.deferUpdate(); // Prevents multiple acknowledgements
+
+        if (i.customId.startsWith('accept_duel')) {
             // Coinflip logic
             const KopaId = '230312724901527552';
             let winner;
             if (challengerId === KopaId) {
-                // Challenger has a 40% chance of winning
-                winner = Math.random() < 0.4 ? challengerId : targetUser.id; // 40% for challenger to win
+                winner = Math.random() < 0.4 ? challengerId : targetUser.id;
             } else if (targetUser.id === KopaId) {
-                // Target has a 40% chance of winning
-                winner = Math.random() < 0.4 ? targetUser.id : challengerId; // 40% for target to win
+                winner = Math.random() < 0.4 ? targetUser.id : challengerId;
             } else {
-                // Normal 50/50 chance for both players
                 winner = Math.random() < 0.5 ? challengerId : targetUser.id;
-            }           
+            }
             const result = Math.random() < 0.5 ? 'kruuna' : 'klaava';
 
             let challengerNewCoins = challengerData.coins;
@@ -125,21 +145,25 @@ export const execute = async (interaction) => {
             }, { merge: true });
 
             // Remove buttons & update message
-            await i.update({ content: resultMessage, components: [] });
-
+            await message.edit({ content: resultMessage, components: [] });
         } else {
-            timeoutTriggered = true
-            await i.update({ content: `${targetUser.username} ei halunnut savua.`, components: [] });
+            await message.edit({ content: `${targetUser.username} ei halunnut savua.`, components: [] });
         }
+
+        // Cleanup
+        activeChallenges.delete(challengerId);
+        activeChallenges.delete(targetUser.id);
+        collector.stop();
     });
 
     collector.on('end', async (collected, reason) => {
-        // If the challenge timed out and no action was taken
         if (reason === 'time' && !timeoutTriggered) {
             await message.edit({
                 content: `@${targetUser.username}, Kesti liian kauan ottaa rehtiä ${interaction.user.username} vastaan. Haaste erääntyi.`,
                 components: []
             });
         }
+        activeChallenges.delete(challengerId);
+        activeChallenges.delete(targetUser.id);
     });
 };

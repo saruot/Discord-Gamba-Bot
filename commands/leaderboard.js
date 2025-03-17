@@ -39,16 +39,16 @@ export const execute = async (interaction) => {
     // Format the message
     const leaderboardMessage = [
         '**Leaderboard: Eniten kolikoita**',
-        sortedByCoins.map((user, index) => `**#${index + 1}:** <@${user.id}>  **${user.coins} kolikolla**`).join('\n'),
+        sortedByCoins.map((user, index) => `**#${index + 1}:** ${user.id}  **${user.coins} kolikolla**`).join('\n'),
         '\n\n**Leaderboard: Isoin coinflip w/r%**',
         sortedByCoinflipWinRate.map((user, index) => {
             const winRate = ((user.totalWins / user.totalFlips) * 100).toFixed(2);
-            return `**#${index + 1}:** <@${user.id}>  **${winRate}%** w/r%`;
+            return `**#${index + 1}:** ${user.id}  **${winRate}%** w/r%`;
         }).join('\n'),
         '\n\n**Leaderboard: Isoin duel w/r%**',
         sortedByDuelWinRate.map((user, index) => {
             const duelWinRate = ((user.duelWins / (user.duelWins + user.duelLosses)) * 100).toFixed(2);
-            return `**#${index + 1}:** <@${user.id}>  **${duelWinRate}%** duel w/r%`;
+            return `**#${index + 1}:** ${user.id} **${duelWinRate}%** duel w/r%`;
         }).join('\n')
     ];
 
@@ -56,4 +56,5 @@ export const execute = async (interaction) => {
     await interaction.reply({
         content: leaderboardMessage.join('\n'),
     });
+
 };

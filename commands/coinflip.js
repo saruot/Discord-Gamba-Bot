@@ -44,7 +44,7 @@ export const execute = async (interaction) => {
         playerWins = Math.random() < 0.4; // 40% win chance
     } else {
         // 50/50 chance for others
-        playerWins = Math.random() < 0.5; // 50% win chance
+        playerWins = Math.random() < 0.475; // 45% win chance
     }    
     const updatedCoins = playerWins ? userData.coins + wager : userData.coins - wager;
 
